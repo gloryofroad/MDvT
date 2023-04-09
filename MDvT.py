@@ -18,25 +18,11 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 '''
-相比与cvt模型，将卷积映射换成conv3d增强对光谱信息的捕捉
+Compared with the cvt model, replacing the convolution mapping with conv3d enhances the capture of spectral information
+
 '''
 
 
-# class Transformer(nn.Module):
-#     def __init__(self, dim, img_size, depth, heads, dim_head, mlp_dim, dropout=0., last_stage=False):
-#         super().__init__()
-#         self.layers = nn.ModuleList([])
-#         for _ in range(depth):
-#             self.layers.append(nn.ModuleList([
-#                 PreNorm(dim, ConvAttention(dim, img_size, heads=heads, dim_head=dim_head, dropout=dropout, last_stage=last_stage)),
-#                 PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout))
-#             ]))
-
-#     def forward(self, x):
-#         for attn, ff in self.layers:
-#             x = attn(x) + x
-#             x = ff(x) + x
-#         return x
 class ConvBNReLU(nn.Sequential):
     def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, padding=0, groups=1):
         # padding = (kernel_size - 1) // 2
@@ -54,13 +40,7 @@ class Transformer(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList([])
         mlp_dim = dim * 4
-        # if mobile_block:
-
-        #     img_size=int(math.ceil(img_size / 2))
-        #     channel_depth=int(math.ceil(channel_depth/2))
-        #     num_patches = img_size * img_size * channel_depth
-        # else:
-        #     num_patches = img_size * img_size * channel_depth
+       
         for _ in range(depth):
             if last_stage == True:
                 self.layers.append(nn.ModuleList([
@@ -75,36 +55,12 @@ class Transformer(nn.Module):
                     PreNorm(dim, MultiHeadAttention(dim, heads)),
                     PreNorm(dim, FeedForward(dim, dim * 2, dropout=dropout, act_layer=SiLU()))
                 ]))
-        # num_patches=img_size*img_size*channels_depth
         self.mode = mode
-        # self.skipcat = nn.ModuleList([])
-        # for _ in range(depth - 2):
-        #     if last_stage==False:
-        #         self.skipcat.append(nn.Conv2d(num_patches , num_patches , [1, 2], 1, 0))
-        #     else:
-        #         self.skipcat.append(nn.Conv2d(num_patches+1, num_patches+1, [1, 2], 1, 0))
-
     def forward(self, x):
-        # for attn, ff in self.layers:
-        #     x = attn(x) + x
-        #     x = ff(x) + x
+        for attn, ff in self.layers:
+            x = attn(x) + x
+            x = ff(x) + x
 
-        if self.mode == 'ViT':
-            for attn, ff in self.layers:
-                x = attn(x) + x
-                x = ff(x) + x
-        elif self.mode == 'CAF':
-            last_output = []
-            nl = 0
-            for attn, ff in self.layers:
-                last_output.append(x)
-                if nl > 1:
-                    x = self.skipcat[nl - 2](
-
-                        torch.cat([x.unsqueeze(3), last_output[nl - 2].unsqueeze(3)], dim=3)).squeeze(3)
-                x = attn(x) + x
-                x = ff(x) + x
-                nl += 1
         return x
 
 
@@ -148,24 +104,6 @@ class SiLU(torch.nn.Module):  # export-friendly version of nn.SiLU()
 
 
 class ConvLayer(nn.Module):
-    """
-    Applies a 2D convolution over an input
-    Args:
-        in_channels (int): :math:`C_{in}` from an expected input of size :math:`(N, C_{in}, H_{in}, W_{in})`
-        out_channels (int): :math:`C_{out}` from an expected output of size :math:`(N, C_{out}, H_{out}, W_{out})`
-        kernel_size (Union[int, Tuple[int, int]]): Kernel size for convolution.
-        stride (Union[int, Tuple[int, int]]): Stride for convolution. Default: 1
-        groups (Optional[int]): Number of groups in convolution. Default: 1
-        bias (Optional[bool]): Use bias. Default: ``False``
-        use_norm (Optional[bool]): Use normalization layer after convolution. Default: ``True``
-        use_act (Optional[bool]): Use activation layer after convolution (or convolution and normalization).
-                                Default: ``True``
-    Shape:
-        - Input: :math:`(N, C_{in}, H_{in}, W_{in})`
-        - Output: :math:`(N, C_{out}, H_{out}, W_{out})`
-    .. note::
-        For depth-wise convolution, `groups=C_{in}=C_{out}`.
-    """
 
     def __init__(
             self,
@@ -224,24 +162,6 @@ class ConvLayer(nn.Module):
 
 
 class MobileViTBlock(nn.Module):
-    """
-    This class defines the `MobileViT block <https://arxiv.org/abs/2110.02178?context=cs.LG>`_
-    Args:
-        opts: command line arguments
-        in_channels (int): :math:`C_{in}` from an expected input of size :math:`(N, C_{in}, H, W)`
-        transformer_dim (int): Input dimension to the transformer unit
-        ffn_dim (int): Dimension of the FFN block
-        n_transformer_blocks (int): Number of transformer blocks. Default: 2
-        head_dim (int): Head dimension in the multi-head attention. Default: 32
-        attn_dropout (float): Dropout in multi-head attention. Default: 0.0
-        dropout (float): Dropout rate. Default: 0.0
-        ffn_dropout (float): Dropout between FFN layers in transformer. Default: 0.0
-        patch_h (int): Patch height for unfolding operation. Default: 8
-        patch_w (int): Patch width for unfolding operation. Default: 8
-        transformer_norm_layer (Optional[str]): Normalization layer in the transformer block. Default: layer_norm
-        conv_ksize (int): Kernel size to learn local representations in MobileViT block. Default: 3
-        no_fusion (Optional[bool]): Do not combine the input and output feature maps. Default: False
-    """
 
     def __init__(
             self,
@@ -249,7 +169,6 @@ class MobileViTBlock(nn.Module):
             transformer_dim: int,
             img_size: int,
             channel_depth: int = 1,
-            # ffn_dim: int,
             depth: int = 2,
             num_heads: int = 4,
             attn_dropout: float = 0.0,
@@ -299,26 +218,18 @@ class MobileViTBlock(nn.Module):
         self.local_rep.add_module(name="conv_3x3", module=conv_3x3_in)
         self.local_rep.add_module(name="conv_1x1", module=conv_1x1_in)
 
-        # assert transformer_dim % head_dim == 0
-        # num_heads = transformer_dim // hea1d_dim
-
         global_rep = [Transformer(
-            # dim ffn_latent_dim:mlp_dim
             dim=transformer_dim,
             img_size=img_size,
             channel_depth=channel_depth,
             dim_head=64,
             depth=depth,
             heads=num_heads,
-            # attn_dropout=attn_dropout,
             dropout=dropout,
-            # ffn_dropout=ffn_dropout
             last_stage=last_stage,
             mobile_block=mobile_block,
             mode=mode,
         )]
-
-        # for _ in range(n_transformer_blocks)
 
         global_rep.append(nn.LayerNorm(transformer_dim))
         self.global_rep = nn.Sequential(*global_rep)
@@ -334,7 +245,6 @@ class MobileViTBlock(nn.Module):
         self.cnn_in_dim = in_channels
         self.cnn_out_dim = transformer_dim
         self.n_heads = num_heads
-        # self.ffn_dim = ffn_dim
         self.dropout = dropout
         self.attn_dropout = attn_dropout
         self.ffn_dropout = ffn_dropout
@@ -363,16 +273,6 @@ class MobileViTBlock(nn.Module):
         num_patch_d = new_d // patch_d  # n_d
         num_patches = num_patch_h * num_patch_w * num_patch_d  # N
 
-        # [B, C, H, W] -> [B * C * n_h, p_h, n_w, p_w]
-        # x = x.reshape(batch_size * in_channels * num_patch_h, patch_h, num_patch_w, patch_w)
-        # # [B * C * n_h, p_h, n_w, p_w] -> [B * C * n_h, n_w, p_h, p_w]
-        # x = x.transpose(1, 2)
-        # # [B * C * n_h, n_w, p_h, p_w] -> [B, C, N, P] where P = p_h * p_w and N = n_h * n_w
-        #
-        # x = x.reshape(batch_size, in_channels, num_patches, patch_area)
-        # # [B, C, N, P] -> [B, P, N, C]
-        # x = x.transpose(1, 3)
-        # # [B, P, N, C] -> [BP, N, C]
         x = x.reshape(batch_size * patch_area, num_patches, -1)
 
         info_dict = {
@@ -401,14 +301,6 @@ class MobileViTBlock(nn.Module):
         num_patch_h = info_dict["num_patches_h"]
         num_patch_w = info_dict["num_patches_w"]
         num_patch_d = info_dict["num_patches_d"]
-
-        # [B, P, N, C] -> [B, C, N, P]
-        # x = x.transpose(1, 3)
-        # # [B, C, N, P] -> [B*C*n_h, n_w, p_h, p_w]
-        # x = x.reshape(batch_size * channels * num_patch_h, num_patch_w, self.patch_h, self.patch_w)
-        # # [B*C*n_h, n_w, p_h, p_w] -> [B*C*n_h, p_h, n_w, p_w]
-        # x = x.transpose(1, 2)
-        # [B*C*n_h, p_h, n_w, p_w] -> [B, C, H, W]
         x = x.reshape(batch_size, channels, num_patch_h * self.patch_h, num_patch_w * self.patch_w,
                       num_patch_d * self.patch_d)
         if info_dict["interpolate"]:
@@ -441,7 +333,7 @@ class MobileViTBlock(nn.Module):
         return fm
 
 
-class CvT(nn.Module):
+class MDvT(nn.Module):
     def __init__(self, image_size, channels, num_classes, dim=64, kernels=[3, 3, 3], strides=[2, 2, 2],
                  heads=[2, 4, 4], depth=[2, 4, 6], pool='cls', dropout=0.1, emb_dropout=0.1, scale_dim=4, mode="ViT"):
         super().__init__()
@@ -450,26 +342,16 @@ class CvT(nn.Module):
         self.dim = dim
         self.heads = heads
         ##### Stage 1 #######
-        # n为光谱维度
-        # self.conv1 = InvertedResidual(1, dim,2,1, 6)
+        # n is spectral dimention
         self.conv1 = nn.Sequential(
             nn.Conv3d(in_channels=1, out_channels=dim, kernel_size=kernels[0], stride=strides[0], padding=1),
             nn.BatchNorm3d(dim),
             nn.ReLU(inplace=True),
         )
-        # self.stage1_conv_embed = nn.Sequential(
-        #     nn.Conv3d(1, dim, kernels[0], strides[0],1),
-        #     # Rearrange('b c h w n-> b (h w n) c', h=image_size // 2, w=image_size // 2),
-        #     # nn.LayerNorm(dim)
-        # )
         self.stage1_transformer = nn.Sequential(
             MobileViTBlock(in_channels=dim, transformer_dim=96, img_size=(image_size + 1) // 2,
                            channel_depth=(channels + 1) // 2,
                            depth=depth[0], num_heads=heads[0], mode=mode),
-            # Transformer(dim=dim, img_size= (image_size+1)//2,depth=depth[0], heads=heads[0], dim_head=self.dim,
-            #                                   mlp_dim=dim * scale_dim, num_patches=((image_size+1)//2)*((image_size+1)//2),dropout=dropout,mode=mode),
-
-            # Rearrange('b (h w) c -> b c h w', h = image_size//2, w =  image_size//2)
         )
 
         ##### Stage 2 #######
@@ -478,23 +360,14 @@ class CvT(nn.Module):
         channels = (channels + 1) // 2
         image_size = (image_size + 1) // 2
         dim = scale * dim
-        # self.conv2 = InvertedResidual(in_channels, dim,2,1, 6)
         self.conv2 = nn.Sequential(
             nn.Conv3d(in_channels, dim, kernels[1], strides[1], 1),
             nn.BatchNorm3d(dim),
             nn.ReLU(inplace=True),
         )
-        # self.stage2_conv_embed = nn.Sequential(
-        #     # nn.Conv3d(in_channels, dim, kernels[1], strides[1],1),
-        #     Rearrange('b c h w n-> b (h w n) c', h=(image_size + 1) // 2, w=(image_size + 1) // 2),
-        #     nn.LayerNorm(dim)
-        # )
         self.stage2_transformer = nn.Sequential(
             MobileViTBlock(in_channels=dim, transformer_dim=120, img_size=(image_size + 1) // 2,
                            channel_depth=(channels + 1) // 2, depth=depth[1], num_heads=heads[1], mode=mode),
-            # Transformer(dim=dim, img_size=(image_size + 1) // 2, depth=depth[1], heads=heads[1],channel_depth=(channels + 1) // 2, dim_head=self.dim,
-            #              dropout=dropout,mode=mode),
-            # Rearrange('b (h w n) c -> b c h w n', h=(image_size + 1) // 2, w=(image_size + 1) // 2)
         )
 
         ##### Stage 3 #######
@@ -505,13 +378,7 @@ class CvT(nn.Module):
         image_size = (image_size + 1) // 2
         dim = (scale * dim)
         self.conv3 = InvertedResidual(in_channels, dim, 2, 1, 6)
-        # self.conv3 = nn.Sequential(
-        #     nn.Conv3d(in_channels, dim, kernels[2], strides[2], 1),
-        #     nn.BatchNorm3d(dim),
-        #     nn.ReLU(inplace=True),
-        # )
         self.stage3_conv_embed = nn.Sequential(
-            # nn.Conv3d(in_channels, dim, kernels[2], strides[2],1),
             Rearrange('b c h w n-> b (h w n) c', h=(image_size + 1) // 2, w=(image_size + 1) // 2),
             nn.LayerNorm(dim)
         )
@@ -534,7 +401,6 @@ class CvT(nn.Module):
         xs_trans1 = self.stage1_transformer(conv1)
 
         conv2 = self.conv2(xs_trans1)
-        # xs_conv2 = self.stage2_conv_embed(conv2)
         xs_trans2 = self.stage2_transformer(conv2)
 
         conv3 = self.conv3(xs_trans2)
@@ -569,10 +435,8 @@ class AvgrageMeter(object):
 def accuracy(output, target, topk=(1,)):
     maxk = max(topk)
     batch_size = target.size(0)
-    # maxk = max((1,))  # 取top1准确率，若取top1和top5准确率改为max((1,5))
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    # 类似于resize
     correct = pred.eq(target.view(1, -1).expand_as(pred))
 
     res = []
@@ -607,10 +471,6 @@ def train_epoch(model, train_loader, criterion, optimizer):
     return top1.avg, objs.avg, tar, pre
 
 
-# def output_metric(tar, pre):
-#     matrix = confusion_matrix(tar, pre)
-#     OA, AA_mean, Kappa, AA = cal_results(matrix)
-#     return OA, AA_mean, Kappa, AA
 def output_metric(tar, pre):
     matrix = confusion_matrix(tar, pre)
     classification = classification_report(tar, pre, digits=4)
@@ -866,7 +726,7 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', choices=['HanChuan', 'LongKou', 'HongHu'], default='HongHu15',
                         help='dataset to use')
     parser.add_argument('--flag_test', choices=['test', 'train'], default='train', help='testing mark')
-    parser.add_argument('--model', choices=['ViT', 'CVT', 'Cvt3D'], default='MCvT', help='model choice')
+    parser.add_argument('--model', choices=['ViT', 'CVT', 'Cvt3D'], default='MDvT', help='model choice')
     parser.add_argument('--mode', choices=['ViT', 'CAF'], default='ViT', help='mode choice')
     parser.add_argument('--gpu_id', default='0', help='gpu id')
     parser.add_argument('--seed', type=int, default=0, help='number of seed')
@@ -888,25 +748,15 @@ if __name__ == "__main__":
     cudnn.deterministic = True
     cudnn.benchmark = True
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print("---------------------3dataset={0}---model={1}----mode={2}------------------".format(args.dataset, args.model,
+    print("---------------------dataset={0}---model={1}----mode={2}------------------".format(args.dataset, args.model,
                                                                                                args.mode))
     url = "/content/drive/MyDrive/HongHu/" + str(args.dataset) + "_" + str(args.model) + "_epoches_" + str(
         args.epoches) + "patches_" + str(args.patches)
     model_path = url + ".pt"
     file_name = url + ".txt"
-    # load data
-    # data_hsi = sio.loadmat("/home/featurize/work/Indian_pines_corrected.mat")['indian_pines_corrected']
-    # gt_hsi = sio.loadmat("/home/featurize/work/Indian_pines_gt.mat")['indian_pines_gt']
-    # data_hsi = pca_change(data_hsi, 100)
-    # height, width, band = data_hsi.shape
-    # x_train_band, y_train_band = creatCube(data_hsi, gt_hsi, windowsize=args.patches)
-    # x_train_band, x_test_band, y_train_band, y_test_band = train_test_split(x_train_band, y_train_band, test_size=0.95)
-    # print('x_train_band={}'.format(x_train_band.shape))
-    # print('x_test_band={}'.format(x_test_band.shape))
-
+    
     data_hsi = np.transpose(gdal.Open("/content/drive/MyDrive/WHU-Hi-HongHu/WHU-Hi-HongHu.tif").ReadAsArray(),
                             axes=[1, 2, 0])
-
     data_hsi = pca_change(data_hsi, 100)
     height, width, band = data_hsi.shape
     # 加载已经分割过的train与test
@@ -917,7 +767,6 @@ if __name__ == "__main__":
     # 在应对大数据量的样本采集时，使用下面的方法
     mirror_image = padwithzeros(data_hsi, margin=int((args.patches - 1) / 2))
     print("------------mirror_image={}------------".format(mirror_image.shape))
-    # sys.exit()
     total_train, number_train = chooose_train_and_test_point(train_meta, num_classes=args.num_classes)
     print(total_train.shape)
     print("------------number_train={}------------".format(number_train))
@@ -926,12 +775,10 @@ if __name__ == "__main__":
     total_test, number_test = divide_train_and_test_point(test_meta, num_classes=args.num_classes)
     print("------------total_test={}------------".format(total_test.shape))
     print("------------number_test={}------------".format(number_test))
-    # sys.exit()
+    
     # 此处可以将波段的组合代码（gain_neighborhood_band）删除。减少数据处理量
     x_train_band = train_and_test_data(mirror_image, data_hsi.shape[2], total_train, patch=args.patches)
     x_test_band = train_and_test_data(mirror_image, data_hsi.shape[2], total_test, patch=args.patches)
-    print("x_test_band={}".format(x_test_band.shape))
-    # sys.exit()
     y_train_band = train_and_test_label(number_train, num_classes=args.num_classes)
     y_test_band = train_and_test_label(number_test, num_classes=args.num_classes)
 
@@ -947,70 +794,44 @@ if __name__ == "__main__":
 
     # img = torch.ones([1, 3, 224, 224]).to(device)
     # ----------------------------------------------------------------------
-    model = CvT(image_size=args.patches, channels=band, num_classes=args.num_classes, mode=args.mode).cuda()
-    # from torchsummary import summary
-    #     from torchsummary import summary
-
-    #     #输出每层网络参数信息
-    #     summary(model,(1,15,15,70),batch_size=1,device="cuda")
+    model = MDvT(image_size=args.patches, channels=band, num_classes=args.num_classes, mode=args.mode).cuda()
 
     parameters = filter(lambda p: p.requires_grad, model.parameters())
     parameters = sum([np.prod(p.size()) for p in parameters]) / 1_000_000
     print('Trainable Parameters: %.3fM' % parameters)
 
-    # out = model(img)
     criterion = nn.CrossEntropyLoss().cuda()
     # optimizer
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
     # optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.epoches // 10, gamma=args.gamma)
     tic = time.time()
-    # 训练
+    # include train and test
     if args.flag_test == 'train':
         tic = time.time()
-        train_acc_list = []
-        valida_acc_list = []
-        train_loss_list = []
-        valida_loss_list = []
+#         train_acc_list = []
+#         valida_acc_list = []
+#         train_loss_list = []
+#         valida_loss_list = []
 
         for epoch in range(args.epoches):
-            # scheduler.step()
 
             # train modeltrain
             model.train()
             train_acc, train_obj, tar_t, pre_t = train_epoch(model, label_train_loader, criterion, optimizer)
             scheduler.step()
-            # OA1, AA_mean1, Kappa1, AA1 = output_metric(tar_t, pre_t)
-            # output_list.extend(pre_t)
-            # labels_list.extend(tar_t)
-            # train_acc_list.append(train_acc.cpu().numpy())
-            # train_loss_list.append(train_obj.cpu().numpy())
 
             print("Epoch: {:03d} train_loss: {:.4f} train_acc: {:.4f}"
                   .format(epoch + 1, train_obj, train_acc))
 
             if ((epoch + 1) % args.test_freq == 0):
                 model.eval()
-                # print("epoch",epoch)
                 with torch.no_grad():
                     test_acc2, test_obj2, tar_v, pre_v = valid_epoch(model, label_test_loader, criterion, optimizer)
                     OA2, AA_mean2, Kappa2, AA2, matrix, classification = output_metric(tar_v, pre_v)
                     print("Epoch: {:03d} test_loss: {:.4f} test_acc: {:.4f} OA2: {:.4f} AA_mean2: {:.4f} Kappa2: {:.4f}"
                           .format(epoch + 1, test_obj2, test_acc2, OA2, AA_mean2, Kappa2))
 
-                    # valida_acc_list.append(test_acc2.cpu().numpy())
-                    # valida_loss_list.append(test_obj2.cpu().numpy())
-        # model.eval()
-        # # print("epoch",epoch)
-        # with torch.no_grad():
-        #     test_acc2, test_obj2, tar_v, pre_v = valid_epoch(model, label_test_loader, criterion, optimizer)
-        #     # OA2, AA_mean2, Kappa2, AA2, matrix, classification = output_metric(tar_v, pre_v)
-        #     print("Epoch: {:03d} test_loss: {:.4f} test_acc: {:.4f}"
-        #           .format(epoch + 1, test_obj2, test_acc2))
-        #     valida_acc_list.append(test_acc2.cpu().numpy())
-        #     valida_loss_list.append(test_obj2.cpu().numpy())
-        # OA2, AA_mean2, Kappa2, AA2, matrix, classification = output_metric(tar_v, pre_v)
-        # draw_acc_loss(train_acc_list, train_loss_list, valida_acc_list, valida_loss_list, args.epoches, url)
         toc = time.time()
         torch.save(model.state_dict(), model_path)
         print("Running Time: {:.2f}".format(toc - tic))
@@ -1040,7 +861,6 @@ if __name__ == "__main__":
             x_file.write('\n')
             x_file.write('{:.4f} time (%)'.format(toc - tic))
         print("-------------txt完成-------------------")
-        # draw_acc_loss(train_acc_list, train_loss_list, valida_acc_list, valida_loss_list, args.epoches, url)
     elif args.flag_test == 'test':
 
         print("Shape of out :")  # [B, num_classes]
