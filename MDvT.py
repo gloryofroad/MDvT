@@ -494,7 +494,7 @@ def cal_results(matrix):
     return OA, AA_mean, Kappa, AA
 
 
-def valid_epoch(model, valid_loader, criterion, optimizer):
+def test_epoch(model, valid_loader, criterion, optimizer):
     objs = AvgrageMeter()
     top1 = AvgrageMeter()
     tar = np.array([])
@@ -518,22 +518,16 @@ def valid_epoch(model, valid_loader, criterion, optimizer):
     return top1.avg, objs.avg, tar, pre
 
 
-# 边界拓展：镜像
 def mirror_hsi(height, width, band, input_normalize, patch=5):
     padding = patch // 2
     mirror_hsi = np.zeros((height + 2 * padding, width + 2 * padding, band), dtype=float)
-    # 中心区域
     mirror_hsi[padding:(padding + height), padding:(padding + width), :] = input_normalize
-    # 左边镜像
     for i in range(padding):
         mirror_hsi[padding:(height + padding), i, :] = input_normalize[:, padding - i - 1, :]
-    # 右边镜像
     for i in range(padding):
         mirror_hsi[padding:(height + padding), width + padding + i, :] = input_normalize[:, width - 1 - i, :]
-    # 上边镜像
     for i in range(padding):
         mirror_hsi[i, :, :] = mirror_hsi[padding * 2 - i - 1, :, :]
-    # 下边镜像
     for i in range(padding):
         mirror_hsi[height + padding + i, :, :] = mirror_hsi[height + padding - 1 - i, :, :]
 
@@ -550,18 +544,13 @@ def chooose_train_and_test_point(train_data, num_classes):
     # -------------------------for train data------------------------------------
     for i in range(num_classes):
         each_class = []
-        # 为了找出标签值的索引位置(排除无关值的干扰)
         each_class = np.argwhere(train_data == i + 1)
         class1 = each_class[:(each_class.shape[0]), :]
         number_train.append(class1.shape[0])
-        # pos_train为1到16的拥有标签值的字典
         pos_train[i] = class1
-    # 标签值为1的样本
     total_pos_train = pos_train[0]
     for i in range(1, num_classes):
-        # np.r_()增加行数，在列的方向堆叠，列数不变，行数增加
         total_pos_train = np.r_[total_pos_train, pos_train[i]]  # (695,2)
-    # 将所有的标签值的样本值叠加
     total_pos_train = total_pos_train.astype(int)
 
     return total_pos_train, number_train
@@ -572,9 +561,7 @@ def gain_neighborhood_band(x_train, band, band_patch, patch=5):
     pp = (patch * patch) // 2
     x_train_reshape = x_train.reshape(x_train.shape[0], patch * patch, band)
     x_train_band = np.zeros((x_train.shape[0], patch * patch * band_patch, band), dtype=float)
-    # 中心区域
     x_train_band[:, nn * patch * patch:(nn + 1) * patch * patch, :] = x_train_reshape
-    # 左边镜像
     for i in range(nn):
         if pp > 0:
             x_train_band[:, i * patch * patch:(i + 1) * patch * patch, :i + 1] = x_train_reshape[:, :, band - i - 1:]
@@ -582,7 +569,6 @@ def gain_neighborhood_band(x_train, band, band_patch, patch=5):
         else:
             x_train_band[:, i:(i + 1), :(nn - i)] = x_train_reshape[:, 0:1, (band - nn + i):]
             x_train_band[:, i:(i + 1), (nn - i):] = x_train_reshape[:, 0:1, :(band - nn + i)]
-    # 右边镜像
     for i in range(nn):
         if pp > 0:
             x_train_band[:, (nn + i + 1) * patch * patch:(nn + i + 2) * patch * patch, :band - i - 1] = x_train_reshape[
@@ -602,7 +588,6 @@ def gain_neighborhood_pixel(mirror_image, point, i, patch=5):
     return temp_image
 
 
-# 汇总训练数据和测试数据
 def train_and_test_data(mirror_image, band, train_point, patch=5):
     x_train = np.zeros((train_point.shape[0], patch, patch, band), dtype=float)
     with tqdm(total=train_point.shape[0], file=sys.stdout) as pbar:
@@ -671,26 +656,18 @@ def divide_train_and_test_point(train_data, num_classes):
     # -------------------------for train data------------------------------------
     for i in range(num_classes):
         each_class = []
-        # 为了找出标签值的索引位置(排除无关值的干扰)
         each_class = np.argwhere(train_data == i + 1)
-        # 此处设置需要注意 Honghu 15 Hanchuan 10 Loukou 10
-        class1 = each_class[:int(each_class.shape[0] / 21), :]
+        #  Note that Honghu 15 Hanchuan 10 Loukou 10
+        class1 = each_class[:int(each_class.shape[0] / 15), :]
         train1.append(class1.shape[0])
-        # pos_train为1到16的拥有标签值的字典
-        # pos_train[i] = each_class
         t1_lab[i] = class1
-        # t2_lab[i] = class2
-    # 标签值为1的样本
-    # total_pos_train = pos_train[0]
     total_t1_lab = t1_lab[0]
     # total_t2_lab = t2_lab[0]
     for i in range(1, num_classes):
-        # np.r_()增加行数，在列的方向堆叠，列数不变，行数增加
         # total_pos_train = np.r_[total_pos_train, pos_train[i]] #(695,2)
         total_t1_lab = np.r_[total_t1_lab, t1_lab[i]]  # (695,2)
         # total_t2_lab = np.r_[total_t2_lab, t2_lab[i]] #(695,2)
 
-    # 将所有的标签值的样本值叠加
     # total_pos_train = total_pos_train.astype(int)
     total_t1_lab = total_t1_lab.astype(int)
     # total_t2_lab = total_t2_lab.astype(int)
@@ -759,34 +736,30 @@ if __name__ == "__main__":
                             axes=[1, 2, 0])
     data_hsi = pca_change(data_hsi, 100)
     height, width, band = data_hsi.shape
-    # 加载已经分割过的train与test
     train_meta = gdal.Open(
         "/content/drive/MyDrive/WHU-Hi-HongHu/Training samples and test samples/Train100.tif").ReadAsArray()
     test_meta = gdal.Open(
         "/content/drive/MyDrive/WHU-Hi-HongHu/Training samples and test samples/Test100.tif").ReadAsArray()
-    # 在应对大数据量的样本采集时，使用下面的方法
     mirror_image = padwithzeros(data_hsi, margin=int((args.patches - 1) / 2))
     print("------------mirror_image={}------------".format(mirror_image.shape))
     total_train, number_train = chooose_train_and_test_point(train_meta, num_classes=args.num_classes)
     print(total_train.shape)
     print("------------number_train={}------------".format(number_train))
-    # sys.exit()
-    # total_test, number_test = chooose_train_and_test_point(test_meta, num_classes=args.num_classes)
+    # Reduce the sample size of the test set to cope with the lack of memory, you can modify it yourself
     total_test, number_test = divide_train_and_test_point(test_meta, num_classes=args.num_classes)
     print("------------total_test={}------------".format(total_test.shape))
     print("------------number_test={}------------".format(number_test))
     
-    # 此处可以将波段的组合代码（gain_neighborhood_band）删除。减少数据处理量
     x_train_band = train_and_test_data(mirror_image, data_hsi.shape[2], total_train, patch=args.patches)
     x_test_band = train_and_test_data(mirror_image, data_hsi.shape[2], total_test, patch=args.patches)
     y_train_band = train_and_test_label(number_train, num_classes=args.num_classes)
     y_test_band = train_and_test_label(number_test, num_classes=args.num_classes)
-
-    x_train = torch.from_numpy(x_train_band).type(torch.FloatTensor).unsqueeze(1)  # [695, 200, 7, 7]
-    y_train = torch.from_numpy(y_train_band).type(torch.LongTensor)  # [695]
+#     shape--> （batch_size, 1, height ,weight, channel）
+    x_train = torch.from_numpy(x_train_band).type(torch.FloatTensor).unsqueeze(1)  
+    y_train = torch.from_numpy(y_train_band).type(torch.LongTensor) 
     Label_train = Data.TensorDataset(x_train, y_train)
-    x_test = torch.from_numpy(x_test_band).type(torch.FloatTensor).unsqueeze(1)  # [9671, 200, 7, 7]
-    y_test = torch.from_numpy(y_test_band).type(torch.LongTensor)  # [9671]
+    x_test = torch.from_numpy(x_test_band).type(torch.FloatTensor).unsqueeze(1)  
+    y_test = torch.from_numpy(y_test_band).type(torch.LongTensor)  
     Label_test = Data.TensorDataset(x_test, y_test)
 
     label_train_loader = Data.DataLoader(Label_train, batch_size=32, shuffle=True)
@@ -807,7 +780,7 @@ if __name__ == "__main__":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.epoches // 10, gamma=args.gamma)
     tic = time.time()
     # include train and test
-    if args.flag_test == 'train':
+    if args.flag_test == 'train and test':
         tic = time.time()
 #         train_acc_list = []
 #         valida_acc_list = []
@@ -827,7 +800,7 @@ if __name__ == "__main__":
             if ((epoch + 1) % args.test_freq == 0):
                 model.eval()
                 with torch.no_grad():
-                    test_acc2, test_obj2, tar_v, pre_v = valid_epoch(model, label_test_loader, criterion, optimizer)
+                    test_acc2, test_obj2, tar_v, pre_v = test_epoch(model, label_test_loader, criterion, optimizer)
                     OA2, AA_mean2, Kappa2, AA2, matrix, classification = output_metric(tar_v, pre_v)
                     print("Epoch: {:03d} test_loss: {:.4f} test_acc: {:.4f} OA2: {:.4f} AA_mean2: {:.4f} Kappa2: {:.4f}"
                           .format(epoch + 1, test_obj2, test_acc2, OA2, AA_mean2, Kappa2))
@@ -860,7 +833,7 @@ if __name__ == "__main__":
             x_file.write('\n')
             x_file.write('\n')
             x_file.write('{:.4f} time (%)'.format(toc - tic))
-        print("-------------txt完成-------------------")
-    elif args.flag_test == 'test':
+        print("-------------txt finish-------------------")
+    elif :
 
         print("Shape of out :")  # [B, num_classes]
